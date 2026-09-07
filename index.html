@@ -23,11 +23,10 @@ function deploymentIdFromGasUrl(url){
     return m ? decodeURIComponent(m[1]) : '';
   }catch(e){return ''}
 }
-if(qs.get('c')&&qs.get('k')){
-  // رابط الزبونة يحمل رابط الـ API الفعلي الذي يعمل على جهاز الموظف.
-  // هذا يمنع الاعتماد على ScriptApp.getService().getUrl أو أي Deployment قديم.
-  const targetApi=qs.get('api') || gasUrlFromDeploymentId(qs.get('d')) || localStorage.getItem('gasApi') || DEFAULT_GAS_API;
-  const target=targetApi+'?customer=1&order='+encodeURIComponent(qs.get('c'))+'&k='+encodeURIComponent(qs.get('k'));
+if(qs.get('c')&&(qs.get('t')||qs.get('k'))){
+  const token=qs.get('t')||qs.get('k');
+  const targetApi=gasUrlFromDeploymentId(qs.get('d')) || qs.get('api') || localStorage.getItem('gasApi') || DEFAULT_GAS_API;
+  const target=targetApi+'?customer=1&order='+encodeURIComponent(qs.get('c'))+'&t='+encodeURIComponent(token);
   location.replace(target);
 }
 if(qs.get('api'))localStorage.setItem('gasApi',qs.get('api'));
@@ -38,20 +37,35 @@ function jsonp(url){return new Promise((resolve,reject)=>{const cb='cb_'+Date.no
 function rid(){return Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,12)}
 async function boot(){if(!api||!emp){app.innerHTML='<div class="card bad"><b>هذا الجهاز غير مفعّل.</b><br>افتح رابط الموظف الذي ينسخه المدير مرة واحدة فقط.</div>';return}app.innerHTML='<div class="card center">جاري التحقق من التفعيل...</div>';try{const r=await jsonp(api+'?api=employeeInfo&emp='+encodeURIComponent(emp));if(!r.ok)throw new Error(r.error);employee=r.employee;home()}catch(e){app.innerHTML='<div class="card bad">'+esc(e.message)+'</div>'}}
 function home(){app.innerHTML=`<div class="card center"><div class="muted">الموظف</div><h2>${esc(employee.name)}</h2><div class="ok pulse">✅ الجهاز مفعّل وجاهز</div></div><div class="card"><div class="hero">عند تجهيز أغراض الزبونة</div><div class="hint">1) اضغط <b>إنشاء طلب جديد</b>.<br>2) اكتب الرقم الذي يظهر على الكيس فوراً.<br>3) اضغط <b>إرسال رابط العنوان للزبونة</b> واخترها من واتساب.<br>4) الزبونة تعبّي عنوانها، والطلب يتحدث عند الكاشير تلقائياً.</div><button id="newBtn" onclick="createOrder()">إنشاء طلب جديد</button><div class="last">لا نسخ رسائل، لا WhatsApp API، ولا تحتاج رقم هاتف الموظف.</div></div>`}
-async function createOrder(){if(busy)return;busy=true;const b=document.getElementById('newBtn');if(b){b.disabled=true;b.textContent='جاري إنشاء الرقم...'}const req=rid();try{const r=await jsonp(api+'?api=employeeCreate&emp='+encodeURIComponent(emp)+'&rid='+encodeURIComponent(req));if(!r.ok)throw new Error(r.error);last=r;showOrder()}catch(e){busy=false;app.innerHTML='<div class="card bad">'+esc(e.message)+'</div><button onclick="home()">إعادة المحاولة</button>'}}
+async function createOrder(){if(busy)return;busy=true;const b=document.getElementById('newBtn');if(b){b.disabled=true;b.textContent='جاري إنشاء الرقم...'}const req=rid();try{const r=await jsonp(api+'?api=employeeCreate&emp='+encodeURIComponent(emp)+'&rid='+encodeURIComponent(req));if(!r.ok)throw new Error(r.error);if(!r.customerToken)throw new Error('تعذر إنشاء رابط الزبونة بشكل صحيح. أعد المحاولة بعد تحديث النظام.');last=r;showOrder()}catch(e){busy=false;app.innerHTML='<div class="card bad">'+esc(e.message)+'</div><button onclick="home()">إعادة المحاولة</button>'}}
 function shortCustomerUrl(){
+  const order=String(last.orderNo||'');
+  const token=String(last.customerToken||'').trim();
+  const dep=deploymentIdFromGasUrl(api);
+  if(order&&token&&dep){
+    return location.origin+location.pathname+
+      '?c='+encodeURIComponent(order)+
+      '&t='+encodeURIComponent(token)+
+      '&d='+encodeURIComponent(dep);
+  }
+  if(order&&token){
+    return location.origin+location.pathname+
+      '?c='+encodeURIComponent(order)+
+      '&t='+encodeURIComponent(token)+
+      '&api='+encodeURIComponent(api);
+  }
+  // Legacy fallback only.
   try{
-    const u=new URL(last.customerUrl);
-    const order=u.searchParams.get('order')||last.orderNo;
-    const key=u.searchParams.get('k')||'';
-    if(key){
+    const u=new URL(last.customerUrl||'');
+    const legacy=u.searchParams.get('t')||u.searchParams.get('k')||'';
+    if(order&&legacy&&dep){
       return location.origin+location.pathname+
         '?c='+encodeURIComponent(order)+
-        '&k='+encodeURIComponent(key)+
-        '&api='+encodeURIComponent(api);
+        '&t='+encodeURIComponent(legacy)+
+        '&d='+encodeURIComponent(dep);
     }
   }catch(e){}
-  return last.customerUrl;
+  return last.customerUrl||'';
 }
 function whatsappMessage(){
   const link=shortCustomerUrl();
