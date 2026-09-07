@@ -12,8 +12,22 @@
 const DEFAULT_GAS_API="https://script.google.com/macros/s/AKfycbxW1Tam-ikjtl8-UQej_FsGskBueLio96nVNIPAW24jqFMmPGABGm85hbxNfaZy3WT4/exec";
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 const qs=new URLSearchParams(location.search);
+function gasUrlFromDeploymentId(id){
+  id=String(id||'').trim();
+  return id ? 'https://script.google.com/macros/s/'+encodeURIComponent(id)+'/exec' : '';
+}
+function deploymentIdFromGasUrl(url){
+  try{
+    const u=new URL(url);
+    const m=u.pathname.match(/\/macros\/s\/([^/]+)\/exec$/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }catch(e){return ''}
+}
 if(qs.get('c')&&qs.get('k')){
-  const target=DEFAULT_GAS_API+'?customer=1&order='+encodeURIComponent(qs.get('c'))+'&k='+encodeURIComponent(qs.get('k'));
+  // رابط الزبونة يحمل رابط الـ API الفعلي الذي يعمل على جهاز الموظف.
+  // هذا يمنع الاعتماد على ScriptApp.getService().getUrl أو أي Deployment قديم.
+  const targetApi=qs.get('api') || gasUrlFromDeploymentId(qs.get('d')) || localStorage.getItem('gasApi') || DEFAULT_GAS_API;
+  const target=targetApi+'?customer=1&order='+encodeURIComponent(qs.get('c'))+'&k='+encodeURIComponent(qs.get('k'));
   location.replace(target);
 }
 if(qs.get('api'))localStorage.setItem('gasApi',qs.get('api'));
@@ -30,7 +44,12 @@ function shortCustomerUrl(){
     const u=new URL(last.customerUrl);
     const order=u.searchParams.get('order')||last.orderNo;
     const key=u.searchParams.get('k')||'';
-    if(key)return location.origin+location.pathname+'?c='+encodeURIComponent(order)+'&k='+encodeURIComponent(key);
+    if(key){
+      return location.origin+location.pathname+
+        '?c='+encodeURIComponent(order)+
+        '&k='+encodeURIComponent(key)+
+        '&api='+encodeURIComponent(api);
+    }
   }catch(e){}
   return last.customerUrl;
 }
