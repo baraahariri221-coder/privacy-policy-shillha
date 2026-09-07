@@ -9,16 +9,37 @@
 </style></head>
 <body><div class="w"><div class="brand">الخليجي الأول</div><div id="app"></div></div>
 <script>
+const DEFAULT_GAS_API="https://script.google.com/macros/s/AKfycbxW1Tam-ikjtl8-UQej_FsGskBueLio96nVNIPAW24jqFMmPGABGm85hbxNfaZy3WT4/exec";
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
-const qs=new URLSearchParams(location.search);if(qs.get('api'))localStorage.setItem('gasApi',qs.get('api'));if(qs.get('emp'))localStorage.setItem('empToken',qs.get('emp'));
-const api=localStorage.getItem('gasApi')||'',emp=localStorage.getItem('empToken')||'';let employee=null,last=null,busy=false;
+const qs=new URLSearchParams(location.search);
+if(qs.get('c')&&qs.get('k')){
+  const target=DEFAULT_GAS_API+'?customer=1&order='+encodeURIComponent(qs.get('c'))+'&k='+encodeURIComponent(qs.get('k'));
+  location.replace(target);
+}
+if(qs.get('api'))localStorage.setItem('gasApi',qs.get('api'));
+if(qs.get('emp'))localStorage.setItem('empToken',qs.get('emp'));
+const api=localStorage.getItem('gasApi')||DEFAULT_GAS_API,emp=localStorage.getItem('empToken')||'';let employee=null,last=null,busy=false;
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function jsonp(url){return new Promise((resolve,reject)=>{const cb='cb_'+Date.now()+'_'+Math.random().toString(16).slice(2);window[cb]=d=>{delete window[cb];s.remove();resolve(d)};const s=document.createElement('script');s.onerror=()=>{delete window[cb];s.remove();reject(new Error('تعذر الاتصال بالنظام'))};s.src=url+(url.includes('?')?'&':'?')+'callback='+cb;document.body.appendChild(s)})}
 function rid(){return Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,12)}
 async function boot(){if(!api||!emp){app.innerHTML='<div class="card bad"><b>هذا الجهاز غير مفعّل.</b><br>افتح رابط الموظف الذي ينسخه المدير مرة واحدة فقط.</div>';return}app.innerHTML='<div class="card center">جاري التحقق من التفعيل...</div>';try{const r=await jsonp(api+'?api=employeeInfo&emp='+encodeURIComponent(emp));if(!r.ok)throw new Error(r.error);employee=r.employee;home()}catch(e){app.innerHTML='<div class="card bad">'+esc(e.message)+'</div>'}}
 function home(){app.innerHTML=`<div class="card center"><div class="muted">الموظف</div><h2>${esc(employee.name)}</h2><div class="ok pulse">✅ الجهاز مفعّل وجاهز</div></div><div class="card"><div class="hero">عند تجهيز أغراض الزبونة</div><div class="hint">1) اضغط <b>إنشاء طلب جديد</b>.<br>2) اكتب الرقم الذي يظهر على الكيس فوراً.<br>3) اضغط <b>إرسال رابط العنوان للزبونة</b> واخترها من واتساب.<br>4) الزبونة تعبّي عنوانها، والطلب يتحدث عند الكاشير تلقائياً.</div><button id="newBtn" onclick="createOrder()">إنشاء طلب جديد</button><div class="last">لا نسخ رسائل، لا WhatsApp API، ولا تحتاج رقم هاتف الموظف.</div></div>`}
 async function createOrder(){if(busy)return;busy=true;const b=document.getElementById('newBtn');if(b){b.disabled=true;b.textContent='جاري إنشاء الرقم...'}const req=rid();try{const r=await jsonp(api+'?api=employeeCreate&emp='+encodeURIComponent(emp)+'&rid='+encodeURIComponent(req));if(!r.ok)throw new Error(r.error);last=r;showOrder()}catch(e){busy=false;app.innerHTML='<div class="card bad">'+esc(e.message)+'</div><button onclick="home()">إعادة المحاولة</button>'}}
-function showOrder(){busy=false;const msg=`السلام عليكم 🌷\nلتأكيد عنوان طلبك من الخليجي الأول، افتحي الرابط التالي وأدخلي بيانات التوصيل:\n${last.customerUrl}\n\nرقم الطلب: #${last.orderNo}`;const wa='https://wa.me/?text='+encodeURIComponent(msg);app.innerHTML=`<div class="card center"><div class="ok">✅ تم إنشاء الطلب</div><p class="muted">اكتب هذا الرقم على الكيس الآن</p><div class="big">#${esc(last.orderNo)}</div><div class="hint"><b>بعد كتابة الرقم على الكيس:</b><br>اضغط الزر التالي واختر الزبونة من واتساب. الرسالة والرابط جاهزان.</div><a class="btn wa" href="${wa}">إرسال رابط العنوان للزبونة على واتساب</a><button class="sec" onclick="copyLink()">نسخ رابط الزبونة فقط</button><button onclick="home()">إنشاء طلب آخر</button></div>`}
-async function copyLink(){try{await navigator.clipboard.writeText(last.customerUrl);alert('تم نسخ رابط الزبونة')}catch(e){prompt('انسخ الرابط:',last.customerUrl)}}
+function shortCustomerUrl(){
+  try{
+    const u=new URL(last.customerUrl);
+    const order=u.searchParams.get('order')||last.orderNo;
+    const key=u.searchParams.get('k')||'';
+    if(key)return location.origin+location.pathname+'?c='+encodeURIComponent(order)+'&k='+encodeURIComponent(key);
+  }catch(e){}
+  return last.customerUrl;
+}
+function whatsappMessage(){
+  const link=shortCustomerUrl();
+  return `🛍️ *الخليجي الأول*\n\nتم تجهيز طلبك رقم *#${last.orderNo}* ✅\n\nيرجى تعبئة عنوان التوصيل من الرابط التالي:\n📍 ${link}\n\nبعد تعبئة العنوان سيصلنا تلقائيًا.\n\nشكرًا لاختيارك *الخليجي الأول* 🤍`;
+}
+function showOrder(){busy=false;const link=shortCustomerUrl();const msg=whatsappMessage();const wa='https://wa.me/?text='+encodeURIComponent(msg);app.innerHTML=`<div class="card center"><div class="ok">✅ تم إنشاء الطلب</div><p class="muted">اكتب هذا الرقم على الكيس الآن</p><div class="big">#${esc(last.orderNo)}</div><div class="hint"><b>بعد كتابة الرقم على الكيس:</b><br>اضغط الزر التالي واختر الزبونة من واتساب.<br>ستظهر لها رسالة مرتبة باسم الخليجي الأول ورقم الطلب ورابط مختصر.</div><a class="btn wa" href="${wa}">إرسال رسالة العنوان للزبونة على واتساب</a><button class="sec" onclick="copyMessage()">نسخ الرسالة كاملة</button><button class="sec" onclick="copyLink()">نسخ رابط العنوان فقط</button><div class="last">الرابط المرسل: ${esc(link)}</div><button onclick="home()">إنشاء طلب آخر</button></div>`}
+async function copyMessage(){const msg=whatsappMessage();try{await navigator.clipboard.writeText(msg);alert('تم نسخ الرسالة كاملة')}catch(e){prompt('انسخ الرسالة:',msg)}}
+async function copyLink(){const link=shortCustomerUrl();try{await navigator.clipboard.writeText(link);alert('تم نسخ رابط العنوان')}catch(e){prompt('انسخ الرابط:',link)}}
 boot();
 </script></body></html>
